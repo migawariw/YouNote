@@ -176,8 +176,15 @@ document.getElementById('signup').onclick = () =>
 document.getElementById('logout').onclick = () => signOut(auth);
 
 const provider = new GoogleAuthProvider();
-document.getElementById('google-login').onclick = () =>
-  signInWithPopup(auth, provider);
+document.getElementById('google-login').onclick = async () => {
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (e) {
+    alert("エラーです\n\n" + e.code);
+    console.log(e);
+  }
+};
+
 
 /* ---------- State ---------- */
 let currentMemoId = null;
