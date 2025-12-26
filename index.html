@@ -41,6 +41,12 @@
       background: #f5f5f5;
     }
 
+    #title {
+      width: 100%;
+      font-size: 20px;
+      margin: 8px 0;
+    }
+
     #editor {
       min-height: 70vh;
       outline: none;
@@ -56,11 +62,13 @@
       margin: 8px 0;
     }
 
+    /* YouTube */
     .video {
       position: relative;
       width: 100%;
       padding-top: 56.25%;
-      margin: 8px 0;
+      margin: 12px auto;
+      max-width: 560px; /* PC */
     }
 
     .video iframe {
@@ -70,21 +78,28 @@
       height: 100%;
       border: 0;
     }
+
+    @media (max-width: 768px) {
+      .video {
+        max-width: 100%;
+      }
+    }
   </style>
 </head>
 
 <body>
 
-<!-- 🔐 ログイン -->
+<!-- 🔐 Login -->
 <section id="view-login">
   <h2>Login</h2>
   <input id="email" placeholder="email"><br>
   <input id="password" type="password" placeholder="password"><br>
   <button id="login">Login</button>
-  <button id="signup">Sign up</button>
+  <button id="signup">Sign up</button><br><br>
+  <button id="google-login">Login with Google</button>
 </section>
 
-<!-- 📂 メモ一覧 -->
+<!-- 📂 List -->
 <section id="view-list" hidden>
   <h2>Memos</h2>
   <button id="new-memo">＋ New memo</button>
@@ -92,9 +107,10 @@
   <button id="logout">Logout</button>
 </section>
 
-<!-- ✏️ エディター -->
+<!-- ✏️ Editor -->
 <section id="view-editor" hidden>
   <button id="back">← Back</button>
+  <input id="title" placeholder="Title">
   <div id="editor" contenteditable="true"></div>
 </section>
 
@@ -106,7 +122,9 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signOut
+  signOut,
+  GoogleAuthProvider,
+  signInWithPopup
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import {
   getFirestore,
@@ -118,9 +136,9 @@ import {
   setDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-/* 🔴 自分の Firebase 設定に差し替え */
+/* 🔴 自分の Firebase 設定 */
 const firebaseConfig = {
-  apiKey: "AIzaSyCdDf0GH80PoGlcbk2yjlaVQfP01Gk9m18",
+ apiKey: "AIzaSyCdDf0GH80PoGlcbk2yjlaVQfP01Gk9m18",
   authDomain: "noteeditor-ba1db.firebaseapp.com",
   projectId: "noteeditor-ba1db",
 };
@@ -140,8 +158,9 @@ const emailInput = document.getElementById('email');
 const passwordInput = document.getElementById('password');
 const memoList = document.getElementById('memo-list');
 const editor = document.getElementById('editor');
+const titleInput = document.getElementById('title');
 
-/* ---------- View control ---------- */
+/* ---------- View ---------- */
 function show(view) {
   Object.values(views).forEach(v => v.hidden = true);
   views[view].hidden = false;
@@ -156,6 +175,10 @@ document.getElementById('signup').onclick = () =>
 
 document.getElementById('logout').onclick = () => signOut(auth);
 
+const provider = new GoogleAuthProvider();
+document.getElementById('google-login').onclick = () =>
+  signInWithPopup(auth, provider);
+
 /* ---------- State ---------- */
 let currentMemoId = null;
 
@@ -169,7 +192,7 @@ onAuthStateChanged(auth, user => {
   }
 });
 
-/* ---------- Load memo list ---------- */
+/* ---------- Load list ---------- */
 async function loadMemos() {
   memoList.innerHTML = '';
   const q = collection(db, 'users', auth.currentUser.uid, 'memos');
@@ -201,32 +224,38 @@ async function openEditor(id) {
   currentMemoId = id;
   const ref = doc(db, 'users', auth.currentUser.uid, 'memos', id);
   const snap = await getDoc(ref);
-  editor.innerHTML = snap.data().content || '';
+
+  const data = snap.data();
+  titleInput.value = data.title || '';
+  editor.innerHTML = data.content || '';
   show('editor');
 }
 
 /* ---------- Back ---------- */
 document.getElementById('back').onclick = () => {
-  editor.innerHTML = '';
   currentMemoId = null;
   loadMemos();
   show('list');
 };
 
-/* ---------- Auto save ---------- */
-editor.addEventListener('input', async () => {
+/* ---------- Save ---------- */
+async function saveMemo() {
   if (!currentMemoId) return;
   await setDoc(
     doc(db, 'users', auth.currentUser.uid, 'memos', currentMemoId),
     {
+      title: titleInput.value || 'Untitled',
       content: editor.innerHTML,
       updated: Date.now()
     },
     { merge: true }
   );
-});
+}
 
-/* ---------- Paste handling ---------- */
+editor.addEventListener('input', saveMemo);
+titleInput.addEventListener('input', saveMemo);
+
+/* ---------- Paste ---------- */
 editor.addEventListener('paste', (e) => {
   e.preventDefault();
   const items = e.clipboardData.items;
@@ -247,9 +276,7 @@ editor.addEventListener('paste', (e) => {
   }
 
   const text = e.clipboardData.getData('text/plain');
-  const yt = text.match(
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/
-  );
+  const yt = text.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
 
   if (yt) {
     const wrap = document.createElement('div');
