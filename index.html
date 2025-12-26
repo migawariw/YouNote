@@ -5,20 +5,45 @@
   <title>Clipper</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    html, body {
+    body {
       margin: 0;
       padding: 16px;
       font-family: sans-serif;
       font-size: 16px;
     }
 
-    #auth {
-      margin-bottom: 16px;
+    section {
+      max-width: 800px;
+      margin: auto;
+    }
+
+    [hidden] {
+      display: none;
+    }
+
+    input, button {
+      font-size: 16px;
+      margin: 4px 0;
+    }
+
+    ul {
+      padding-left: 0;
+    }
+
+    li {
+      list-style: none;
+      padding: 8px;
+      border-bottom: 1px solid #ddd;
+      cursor: pointer;
+    }
+
+    li:hover {
+      background: #f5f5f5;
     }
 
     #editor {
-      outline: none;
       min-height: 70vh;
+      outline: none;
       white-space: pre-wrap;
       word-break: break-word;
       border-top: 1px solid #ccc;
@@ -45,47 +70,59 @@
       height: 100%;
       border: 0;
     }
-
-    button {
-      margin-right: 8px;
-    }
   </style>
 </head>
 
 <body>
 
-<div id="auth">
-  <input id="email" placeholder="email">
-  <input id="password" type="password" placeholder="password">
+<!-- 🔐 ログイン -->
+<section id="view-login">
+  <h2>Login</h2>
+  <input id="email" placeholder="email"><br>
+  <input id="password" type="password" placeholder="password"><br>
   <button id="login">Login</button>
   <button id="signup">Sign up</button>
-  <button id="logout" style="display:none;">Logout</button>
-</div>
+</section>
 
-<div id="editor" contenteditable="false"></div>
+<!-- 📂 メモ一覧 -->
+<section id="view-list" hidden>
+  <h2>Memos</h2>
+  <button id="new-memo">＋ New memo</button>
+  <ul id="memo-list"></ul>
+  <button id="logout">Logout</button>
+</section>
+
+<!-- ✏️ エディター -->
+<section id="view-editor" hidden>
+  <button id="back">← Back</button>
+  <div id="editor" contenteditable="true"></div>
+</section>
 
 <script type="module">
 /* ---------- Firebase ---------- */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import {
   getAuth,
+  onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged
+  signOut
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import {
   getFirestore,
+  collection,
+  addDoc,
+  getDocs,
   doc,
   getDoc,
   setDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-/* 🔴 ここを書き換える */
+/* 🔴 自分の Firebase 設定に差し替え */
 const firebaseConfig = {
-  apiKey: "AIzaSyCdDf0GH80PoGlcbk2yjlaVQfP01Gk9m18",
-  authDomain: "noteeditor-ba1db.firebaseapp.com",
-  projectId: "noteeditor-ba1db",
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_DOMAIN",
+  projectId: "YOUR_PROJECT_ID"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -93,63 +130,110 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 /* ---------- DOM ---------- */
-const editor = document.getElementById('editor');
-const loginBtn = document.getElementById('login');
-const signupBtn = document.getElementById('signup');
-const logoutBtn = document.getElementById('logout');
+const views = {
+  login: document.getElementById('view-login'),
+  list: document.getElementById('view-list'),
+  editor: document.getElementById('view-editor')
+};
+
 const emailInput = document.getElementById('email');
 const passwordInput = document.getElementById('password');
+const memoList = document.getElementById('memo-list');
+const editor = document.getElementById('editor');
 
-/* ---------- Auth UI ---------- */
-loginBtn.onclick = () =>
+/* ---------- View control ---------- */
+function show(view) {
+  Object.values(views).forEach(v => v.hidden = true);
+  views[view].hidden = false;
+}
+
+/* ---------- Auth ---------- */
+document.getElementById('login').onclick = () =>
   signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
 
-signupBtn.onclick = () =>
+document.getElementById('signup').onclick = () =>
   createUserWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
 
-logoutBtn.onclick = () => signOut(auth);
+document.getElementById('logout').onclick = () => signOut(auth);
 
-/* ---------- Auth State ---------- */
-onAuthStateChanged(auth, async (user) => {
+/* ---------- State ---------- */
+let currentMemoId = null;
+
+/* ---------- Auth state ---------- */
+onAuthStateChanged(auth, user => {
   if (user) {
-    loginBtn.style.display = signupBtn.style.display = 'none';
-    logoutBtn.style.display = 'inline';
-    editor.contentEditable = true;
-
-    const ref = doc(db, 'users', user.uid);
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      editor.innerHTML = snap.data().content || '';
-    }
+    loadMemos();
+    show('list');
   } else {
-    editor.innerHTML = '';
-    editor.contentEditable = false;
-    loginBtn.style.display = signupBtn.style.display = 'inline';
-    logoutBtn.style.display = 'none';
+    show('login');
   }
 });
 
-/* ---------- Auto Save ---------- */
-editor.addEventListener('input', async () => {
-  const user = auth.currentUser;
-  if (!user) return;
-  await setDoc(doc(db, 'users', user.uid), {
-    content: editor.innerHTML,
-    updated: Date.now()
+/* ---------- Load memo list ---------- */
+async function loadMemos() {
+  memoList.innerHTML = '';
+  const q = collection(db, 'users', auth.currentUser.uid, 'memos');
+  const snap = await getDocs(q);
+
+  snap.forEach(d => {
+    const li = document.createElement('li');
+    li.textContent = d.data().title || 'Untitled';
+    li.onclick = () => openEditor(d.id);
+    memoList.appendChild(li);
   });
+}
+
+/* ---------- New memo ---------- */
+document.getElementById('new-memo').onclick = async () => {
+  const ref = await addDoc(
+    collection(db, 'users', auth.currentUser.uid, 'memos'),
+    {
+      title: 'New memo',
+      content: '',
+      updated: Date.now()
+    }
+  );
+  openEditor(ref.id);
+};
+
+/* ---------- Open editor ---------- */
+async function openEditor(id) {
+  currentMemoId = id;
+  const ref = doc(db, 'users', auth.currentUser.uid, 'memos', id);
+  const snap = await getDoc(ref);
+  editor.innerHTML = snap.data().content || '';
+  show('editor');
+}
+
+/* ---------- Back ---------- */
+document.getElementById('back').onclick = () => {
+  editor.innerHTML = '';
+  currentMemoId = null;
+  loadMemos();
+  show('list');
+};
+
+/* ---------- Auto save ---------- */
+editor.addEventListener('input', async () => {
+  if (!currentMemoId) return;
+  await setDoc(
+    doc(db, 'users', auth.currentUser.uid, 'memos', currentMemoId),
+    {
+      content: editor.innerHTML,
+      updated: Date.now()
+    },
+    { merge: true }
+  );
 });
 
-/* ---------- Paste ---------- */
+/* ---------- Paste handling ---------- */
 editor.addEventListener('paste', (e) => {
   e.preventDefault();
-
-  const clipboard = e.clipboardData;
-  const items = clipboard.items;
+  const items = e.clipboardData.items;
   const range = document.getSelection().getRangeAt(0);
 
   for (const item of items) {
     if (item.type.startsWith('image/')) {
-      const file = item.getAsFile();
       const reader = new FileReader();
       reader.onload = () => {
         const img = document.createElement('img');
@@ -157,12 +241,12 @@ editor.addEventListener('paste', (e) => {
         range.insertNode(img);
         range.collapse(false);
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(item.getAsFile());
       return;
     }
   }
 
-  const text = clipboard.getData('text/plain');
+  const text = e.clipboardData.getData('text/plain');
   const yt = text.match(
     /(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/
   );
