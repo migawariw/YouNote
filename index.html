@@ -279,18 +279,21 @@ editor.addEventListener('paste', (e) => {
   const yt = text.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
 
   if (yt) {
-    const wrap = document.createElement('div');
-    wrap.className = 'video';
-    const iframe = document.createElement('iframe');
-    iframe.src = `https://www.youtube.com/embed/${yt[1]}`;
-    iframe.allowFullscreen = true;
-    wrap.appendChild(iframe);
-    range.insertNode(wrap);
-    range.collapse(false);
-  } else {
-    document.execCommand('insertText', false, text);
-  }
-});
+  const wrap = document.createElement('div');
+  wrap.className = 'video';
+
+  const iframe = document.createElement('iframe');
+  iframe.src = `https://www.youtube.com/embed/${yt[1]}`;
+  iframe.setAttribute('allowfullscreen', '');
+  iframe.setAttribute(
+    'allow',
+    'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
+  );
+
+  wrap.appendChild(iframe);
+  range.insertNode(wrap);
+  range.collapse(false);
+}
 </script>
 
 </body>
