@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Clipper</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 16px;
+      font-family: sans-serif;
+      font-size: 16px;
+    }
+
+    #auth {
+      margin-bottom: 16px;
+    }
+
+    #editor {
+      outline: none;
+      min-height: 70vh;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border-top: 1px solid #ccc;
+      padding-top: 16px;
+    }
+
+    img {
+      max-width: 100%;
+      display: block;
+      margin: 8px 0;
+    }
+
+    .video {
+      position: relative;
+      width: 100%;
+      padding-top: 56.25%;
+      margin: 8px 0;
+    }
+
+    .video iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
+    button {
+      margin-right: 8px;
+    }
+  </style>
+</head>
+
+<body>
+
+<div id="auth">
+  <input id="email" placeholder="email">
+  <input id="password" type="password" placeholder="password">
+  <button id="login">Login</button>
+  <button id="signup">Sign up</button>
+  <button id="logout" style="display:none;">Logout</button>
+</div>
+
+<div id="editor" contenteditable="false"></div>
+
+<script type="module">
+/* ---------- Firebase ---------- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+/* 🔴 ここを書き換える */
+const firebaseConfig = {
+  apiKey: "AIzaSyCdDf0GH80PoGlcbk2yjlaVQfP01Gk9m18",
+  authDomain: "noteeditor-ba1db.firebaseapp.com",
+  projectId: "noteeditor-ba1db",
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+/* ---------- DOM ---------- */
+const editor = document.getElementById('editor');
+const loginBtn = document.getElementById('login');
+const signupBtn = document.getElementById('signup');
+const logoutBtn = document.getElementById('logout');
+const emailInput = document.getElementById('email');
+const passwordInput = document.getElementById('password');
+
+/* ---------- Auth UI ---------- */
+loginBtn.onclick = () =>
+  signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+
+signupBtn.onclick = () =>
+  createUserWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+
+logoutBtn.onclick = () => signOut(auth);
+
+/* ---------- Auth State ---------- */
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    loginBtn.style.display = signupBtn.style.display = 'none';
+    logoutBtn.style.display = 'inline';
+    editor.contentEditable = true;
+
+    const ref = doc(db, 'users', user.uid);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      editor.innerHTML = snap.data().content || '';
+    }
+  } else {
+    editor.innerHTML = '';
+    editor.contentEditable = false;
+    loginBtn.style.display = signupBtn.style.display = 'inline';
+    logoutBtn.style.display = 'none';
+  }
+});
+
+/* ---------- Auto Save ---------- */
+editor.addEventListener('input', async () => {
+  const user = auth.currentUser;
+  if (!user) return;
+  await setDoc(doc(db, 'users', user.uid), {
+    content: editor.innerHTML,
+    updated: Date.now()
+  });
+});
+
+/* ---------- Paste ---------- */
+editor.addEventListener('paste', (e) => {
+  e.preventDefault();
+
+  const clipboard = e.clipboardData;
+  const items = clipboard.items;
+  const range = document.getSelection().getRangeAt(0);
+
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = document.createElement('img');
+        img.src = reader.result;
+        range.insertNode(img);
+        range.collapse(false);
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+  }
+
+  const text = clipboard.getData('text/plain');
+  const yt = text.match(
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/
+  );
+
+  if (yt) {
+    const wrap = document.createElement('div');
+    wrap.className = 'video';
+    const iframe = document.createElement('iframe');
+    iframe.src = `https://www.youtube.com/embed/${yt[1]}`;
+    iframe.allowFullscreen = true;
+    wrap.appendChild(iframe);
+    range.insertNode(wrap);
+    range.collapse(false);
+  } else {
+    document.execCommand('insertText', false, text);
+  }
+});
+</script>
+
+</body>
+</html>
