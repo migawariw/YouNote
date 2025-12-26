@@ -289,7 +289,9 @@ editor.addEventListener('paste', (e) => {
     const wrap = document.createElement('div');
     wrap.className = 'video';
     const iframe = document.createElement('iframe');
-    iframe.src = `https://www.youtube.com/embed/${yt[1]}`;
+    iframe.src =
+  `https://www.youtube-nocookie.com/embed/${yt[1]}?` +
+  `modestbranding=1&rel=0&playsinline=1`;
     iframe.allowFullscreen = true;
     wrap.appendChild(iframe);
     range.insertNode(wrap);
